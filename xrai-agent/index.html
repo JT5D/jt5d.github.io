@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="color-scheme" content="dark" />
+  <title>XRAI Agent</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="logo">△</span><strong>XRAI Agent</strong><span class="tag">small · recursive · visible</span></div>
+    <nav><button class="tab active" data-view="chat">Chat</button><button class="tab" data-view="control">Control Room</button></nav>
+    <div id="health" class="health">● ready</div>
+  </header>
+
+  <main>
+    <section id="chatView" class="view active">
+      <div class="chat-shell">
+        <div class="chat-head"><div><h1>Ask. Watch. Improve.</h1><p>No-key local AI in the browser, plus the same agent tools for CLI, ChatGPT, and Claude Code.</p></div><button id="openControl" class="secondary">Open live graph →</button></div>
+        <div id="messages" class="messages">
+          <article class="msg agent"><div class="avatar">△</div><div><b>XRAI Agent</b><p>Give me a task. On this public page I run locally on your device with no API key, retrieve XRAI knowledge, orchestrate bounded worker agents, evaluate the result, and retain only verified lessons in your browser.</p></div></article>
+        </div>
+        <form id="chatForm" class="composer">
+          <textarea id="task" rows="3" placeholder="e.g. Inspect this repo, fix the failing tests, verify the fix, and explain what changed." required></textarea>
+          <div class="composer-row"><span id="status">idle</span><button id="runButton" type="submit">Run agent</button></div>
+        </form>
+      </div>
+    </section>
+
+    <section id="controlView" class="view">
+      <div class="control-grid">
+        <aside class="panel config">
+          <h2>Orchestration</h2>
+          <label>Workspace<input id="workspace" value="." /></label><p class="mode-note">GitHub Pages uses a browser sandbox: local AI + XRAI knowledge + orchestration. CLI/MCP mode can also use shell and external tools.</p>
+          <div class="split"><label>Max depth<input id="maxDepth" type="number" min="0" max="4" value="2" /></label><label>Children / agent<input id="maxChildren" type="number" min="0" max="4" value="2" /></label></div>
+          <label>Evaluator retries<input id="retries" type="number" min="0" max="3" value="1" /></label>
+          <p class="hint">Limits prevent runaway recursion. The evaluator retries only when the score is below the quality gate.</p>
+          <div class="actions"><button id="rerun" class="secondary" disabled>Rerun last task</button><button id="clear" class="ghost">Clear view</button></div>
+          <hr/>
+          <h3>Run</h3>
+          <dl class="stats"><div><dt>Score</dt><dd id="score">—</dd></div><div><dt>Attempts</dt><dd id="attempts">—</dd></div><div><dt>Events</dt><dd id="eventCount">0</dd></div><div><dt>Run ID</dt><dd id="runId">—</dd></div></dl>
+        </aside>
+
+        <section class="panel graph-panel">
+          <div class="panel-head"><div><h2>Live execution graph</h2><p>Observable activity, not hidden chain-of-thought.</p></div><div class="legend"><span>● running</span><span>✓ done</span><span>◇ knowledge/eval</span></div></div>
+          <div id="graph" class="graph"><div class="empty">Run a task to see the execution DAG.</div></div>
+        </section>
+
+        <aside class="panel timeline-panel">
+          <div class="panel-head"><div><h2>Activity</h2><p>Tool calls, delegation, retrieval, evaluation, learning.</p></div></div>
+          <div id="timeline" class="timeline"><div class="empty">No activity yet.</div></div>
+        </aside>
+      </div>
+      <section class="panel output-panel"><div class="panel-head"><h2>Latest result</h2><button id="backChat" class="ghost">Back to chat</button></div><pre id="latestOutput">No result yet.</pre></section>
+    </section>
+  </main>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
