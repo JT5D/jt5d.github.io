@@ -36,7 +36,7 @@
       <div class="agent-card">
         <div><span class="status-dot"></span><strong id="agentState">Agent ready</strong></div>
         <dl>
-          <div><dt>Version</dt><dd>0.3.0</dd></div>
+          <div><dt>Version</dt><dd>0.3.1</dd></div>
           <div><dt>Mode</dt><dd id="modeLabel">detecting</dd></div>
           <div><dt>Persistence</dt><dd>on</dd></div>
           <div><dt>Learning</dt><dd>evidence-gated</dd></div>
@@ -86,6 +86,7 @@
             <p id="currentTask">No task running.</p>
             <div class="progress-row"><span id="progressLabel">Idle</span><b id="progressValue">0%</b></div>
             <div class="progress-track"><span id="progressBar"></span></div>
+            <button id="downloadPatch" class="subtle" type="button" hidden style="margin-top:9px">Download patch</button>
           </section>
           <section class="status-block">
             <h3>Capabilities</h3>
@@ -120,7 +121,7 @@
       <section class="focus-panel panel" id="runtimePanel" hidden>
         <div class="panel-header"><div><h2>Runtime</h2><p>Choose the simplest truthful execution path for the task.</p></div><button class="subtle back-workspace" type="button">Back to workspace</button></div>
         <div class="runtime-grid">
-          <article><strong>Public browser</strong><p>No key. Local AI + XRAI knowledge + durable UI state. Real public Node repo execution on compatible desktop browsers; private repos remain gated.</p><code>https://jt5d.github.io/xrai-agent/</code></article>
+          <article><strong>Public browser</strong><p>No key. Local AI + XRAI knowledge + durable UI state. Real public Node repo execution on compatible desktop browsers, with verified patch output; anonymous mode never pushes to GitHub.</p><code>https://jt5d.github.io/xrai-agent/</code></article>
           <article><strong>Local execution host</strong><p>Optional power mode for local/private work. Public Node/JS/TS repos no longer require it on compatible desktop browsers.</p><code>ollama pull qwen3:0.6b<br>node src/cli.js web</code></article>
           <article><strong>Claude Code</strong><p>Claude can be the reasoning host while XRAI supplies shell, knowledge, skills, and recursive execution over MCP.</p><code>claude mcp add --transport stdio --scope project xrai -- node "$PWD/src/cli.js" mcp</code></article>
           <article><strong>ChatGPT</strong><p>Use the local MCP endpoint through a secure remote MCP connection. XRAI itself does not need a model API key.</p><code>http://127.0.0.1:8787/mcp</code></article>
@@ -139,7 +140,6 @@
   </footer>
 
   <script src="./coi-bootstrap.js"></script>
-  <script type="module" src="./repo-runtime.js"></script>
-  <script type="module" src="./app.js"></script>
+  <script type="module" src="./app.js?v=0.3.1"></script>
 </body>
 </html>
