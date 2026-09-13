@@ -26,18 +26,23 @@ function renderEvent(ev){
   $('#eventCount').textContent=events.filter(x=>x.runId===activeRun).length;
   if(ev.type==='run:start'){$('#runId').textContent=ev.runId.slice(0,8);$('#health').textContent='● running';$('#health').style.color='var(--cyan)'}
   if(ev.type==='eval'&&ev.data?.score!=null) $('#score').textContent=Math.round(ev.data.score*100)+'%';
-  if(ev.type==='run:done'){$('#health').textContent=`● ${mode==='server'?'server':'local'} ready`;$('#health').style.color='var(--green)';$('#attempts').textContent=ev.data?.attempts??'—'}
+  if(ev.type.startsWith('skill:')&&ev.type!=='skill:hit') $('#learning').textContent=ev.type.replace('skill:','');
+  if(ev.type==='meta:update'&&ev.data?.meta?.version) $('#metaVersion').textContent='v'+ev.data.meta.version;
+  if(ev.type==='meta:update'&&ev.data?.version) $('#metaVersion').textContent='v'+ev.data.version;
+  if(ev.type==='run:done'){$('#health').textContent=`● ${mode==='server'?'server':'local'} ready`;$('#health').style.color='var(--green)';$('#attempts').textContent=ev.data?.attempts??'—';if(ev.data?.learning)$('#learning').textContent=ev.data.learning}
 }
-function kind(ev){if(ev.type.startsWith('agent:'))return'agent';if(ev.type.startsWith('tool:')||ev.type==='model:ready')return'tool';if(ev.type.startsWith('knowledge:'))return'knowledge';if(ev.type==='eval'||ev.type==='retry')return'eval';if(ev.type==='learn')return'learn';return'agent'}
+function kind(ev){if(ev.type.startsWith('agent:'))return'agent';if(ev.type.startsWith('tool:')||ev.type==='model:ready')return'tool';if(ev.type.startsWith('knowledge:')||ev.type==='skill:hit')return'knowledge';if(ev.type==='eval'||ev.type==='retry')return'eval';if(ev.type.startsWith('skill:')||ev.type==='meta:update')return'learn';return'agent'}
 function renderGraph(){
   const runEvents=events.filter(e=>e.runId===activeRun); if(!runEvents.length)return;
   const graph=$('#graph'); graph.innerHTML=''; const entities=[]; const byId=new Map();
   for(const ev of runEvents){
     let id=null,title=null,parent=null,k=kind(ev),summary=ev.summary;
     if(ev.type==='run:start'){id='goal';title='User goal';k='agent'}
-    else if(ev.agentId){id='a:'+ev.agentId;title=ev.name||ev.type;parent=ev.parentAgentId?'a:'+ev.parentAgentId:'goal'}
     else if(ev.type==='eval'){id='eval';title='Evaluator';parent='goal';k='eval'}
-    else if(ev.type==='learn'){id='learn';title='Verified lesson';parent='eval';k='learn'}
+    else if(ev.type==='skill:hit'){id='skill-hit:'+String(ev.data?.id||ev.data?.source||summary).slice(0,48);title='Promoted skill';parent='goal';k='knowledge'}
+    else if(ev.type.startsWith('skill:')){id='skill-gate:'+String(ev.data?.id||'candidate');title=ev.type.replace('skill:','Skill ');parent='eval';k='learn'}
+    else if(ev.type==='meta:update'){id='meta';title='Meta-skill';parent='eval';k='learn'}
+    else if(ev.agentId){id='a:'+ev.agentId;title=ev.name||ev.type;parent=ev.parentAgentId?'a:'+ev.parentAgentId:'goal'}
     if(!id)continue;
     if(!byId.has(id)){const n={id,title,parent,k,summary,running:ev.type.endsWith(':start')};byId.set(id,n);entities.push(n)}else{const n=byId.get(id);n.summary=summary;if(ev.type.endsWith(':done')||ev.type==='eval')n.running=false}
   }
@@ -49,7 +54,7 @@ function renderGraph(){
 }
 
 async function run(task){
-  lastTask=task;$('#rerun').disabled=false;activeRun=null;events=[];$('#timeline').innerHTML='<div class="empty">Starting…</div>';$('#graph').innerHTML='<div class="empty">Starting agent…</div>';$('#latestOutput').textContent='Running…';$('#score').textContent='—';$('#attempts').textContent='—';$('#eventCount').textContent='0';$('#status').textContent='running';$('#runButton').disabled=true;show('control');
+  lastTask=task;$('#rerun').disabled=false;activeRun=null;events=[];$('#timeline').innerHTML='<div class="empty">Starting…</div>';$('#graph').innerHTML='<div class="empty">Starting agent…</div>';$('#latestOutput').textContent='Running…';$('#score').textContent='—';$('#attempts').textContent='—';$('#learning').textContent='—';$('#eventCount').textContent='0';$('#status').textContent='running';$('#runButton').disabled=true;show('control');
   try{
     let data;
     if(mode==='server'){
@@ -69,4 +74,5 @@ $('#rerun').onclick=()=>lastTask&&run(lastTask);$('#clear').onclick=()=>{events=
 (async()=>{
   try{const r=await fetch('./api/capabilities',{headers:{accept:'application/json'}});if(!r.ok)throw new Error('static');const c=await r.json();if(c.autonomous){mode='server';connectSse();$('#health').textContent='● server ready';$('#status').textContent=`server · ${c.model}`}else{mode='local';$('#health').textContent='● no-key local';$('#health').style.color='var(--green)';$('#status').textContent='no-key local AI · server tools remain available through MCP';$('#workspace').disabled=true;$('#workspace').value='browser sandbox'}}
   catch{mode='local';$('#health').textContent='● no-key local';$('#health').style.color='var(--green)';$('#status').textContent='no-key local AI · model loads on first message';$('#workspace').disabled=true;$('#workspace').value='browser sandbox';}
+  try{const m=JSON.parse(localStorage.getItem('xrai-meta-v2')||'{}');if(m.version)$('#metaVersion').textContent='v'+m.version}catch{}
 })();
