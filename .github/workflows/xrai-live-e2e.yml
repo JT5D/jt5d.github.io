@@ -1,0 +1,65 @@
+name: XRAI live E2E
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'xrai-agent/**'
+      - '.github/scripts/xrai-live-e2e.mjs'
+      - '.github/workflows/xrai-live-e2e.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  XRAI_URL: https://jt5d.github.io/xrai-agent/
+  XRAI_VERSION: 0.3.2
+
+jobs:
+  chromium-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout Pages repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Wait for GitHub Pages deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          for i in {1..30}; do
+            body="$(curl -fsSL --max-time 20 "${XRAI_URL}?ci=${GITHUB_SHA}" || true)"
+            if printf '%s' "$body" | grep -q '0.3.2'; then
+              echo 'Deployed XRAI v0.3.2 detected.'
+              exit 0
+            fi
+            echo "Waiting for Pages deployment ($i/30)..."
+            sleep 5
+          done
+          echo 'Timed out waiting for the expected Pages build.' >&2
+          exit 1
+
+      - name: Install Playwright Chromium
+        run: |
+          npm install --no-save --no-package-lock playwright@1.55.0
+          npx playwright install --with-deps chromium
+
+      - name: Run live Chromium flow
+        env:
+          XRAI_E2E_OUT: xrai-e2e-artifacts
+        run: node .github/scripts/xrai-live-e2e.mjs
+
+      - name: Upload E2E evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xrai-live-e2e-${{ github.run_id }}
+          path: xrai-e2e-artifacts
+          if-no-files-found: warn
+          retention-days: 7
