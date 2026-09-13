@@ -19,7 +19,7 @@
       <div class="chat-shell">
         <div class="chat-head"><div><h1>Ask. Watch. Improve.</h1><p>No-key local AI in the browser, plus the same agent tools for CLI, ChatGPT, and Claude Code.</p></div><button id="openControl" class="secondary">Open live graph →</button></div>
         <div id="messages" class="messages">
-          <article class="msg agent"><div class="avatar">△</div><div><b>XRAI Agent</b><p>Give me a task. On this public page I run locally on your device with no API key, retrieve XRAI knowledge, orchestrate bounded worker agents, evaluate the result, and retain only verified lessons in your browser.</p></div></article>
+          <article class="msg agent"><div class="avatar">△</div><div><b>XRAI Agent</b><p>Give me a task. On this public page I run locally on your device with no API key, retrieve XRAI knowledge, orchestrate bounded worker agents, evaluate the result, and learn versioned skills through evidence gates, repeated support, and rollback in your browser.</p></div></article>
         </div>
         <form id="chatForm" class="composer">
           <textarea id="task" rows="3" placeholder="e.g. Inspect this repo, fix the failing tests, verify the fix, and explain what changed." required></textarea>
@@ -39,7 +39,7 @@
           <div class="actions"><button id="rerun" class="secondary" disabled>Rerun last task</button><button id="clear" class="ghost">Clear view</button></div>
           <hr/>
           <h3>Run</h3>
-          <dl class="stats"><div><dt>Score</dt><dd id="score">—</dd></div><div><dt>Attempts</dt><dd id="attempts">—</dd></div><div><dt>Events</dt><dd id="eventCount">0</dd></div><div><dt>Run ID</dt><dd id="runId">—</dd></div></dl>
+          <dl class="stats"><div><dt>Score</dt><dd id="score">—</dd></div><div><dt>Attempts</dt><dd id="attempts">—</dd></div><div><dt>Learning</dt><dd id="learning">—</dd></div><div><dt>Meta</dt><dd id="metaVersion">v1</dd></div><div><dt>Events</dt><dd id="eventCount">0</dd></div><div><dt>Run ID</dt><dd id="runId">—</dd></div></dl>
         </aside>
 
         <section class="panel graph-panel">
@@ -48,7 +48,7 @@
         </section>
 
         <aside class="panel timeline-panel">
-          <div class="panel-head"><div><h2>Activity</h2><p>Tool calls, delegation, retrieval, evaluation, learning.</p></div></div>
+          <div class="panel-head"><div><h2>Activity</h2><p>Tool calls, delegation, retrieval, evaluation, skill promotion, rollback, and slow meta-learning.</p></div></div>
           <div id="timeline" class="timeline"><div class="empty">No activity yet.</div></div>
         </aside>
       </div>
