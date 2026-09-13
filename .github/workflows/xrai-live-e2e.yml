@@ -14,7 +14,7 @@ permissions:
 
 env:
   XRAI_URL: https://jt5d.github.io/xrai-agent/
-  XRAI_VERSION: 0.3.2
+  XRAI_VERSION: 0.3.3
 
 jobs:
   chromium-e2e:
@@ -23,38 +23,33 @@ jobs:
     steps:
       - name: Checkout Pages repo
         uses: actions/checkout@v4
-
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
-
       - name: Wait for GitHub Pages deployment
         shell: bash
         run: |
           set -euo pipefail
-          for i in {1..30}; do
+          for i in {1..40}; do
             body="$(curl -fsSL --max-time 20 "${XRAI_URL}?ci=${GITHUB_SHA}" || true)"
-            if printf '%s' "$body" | grep -q '0.3.2'; then
-              echo 'Deployed XRAI v0.3.2 detected.'
+            if printf '%s' "$body" | grep -q '0.3.3'; then
+              echo 'Deployed XRAI v0.3.3 detected.'
               exit 0
             fi
-            echo "Waiting for Pages deployment ($i/30)..."
+            echo "Waiting for Pages deployment ($i/40)..."
             sleep 5
           done
           echo 'Timed out waiting for the expected Pages build.' >&2
           exit 1
-
       - name: Install Playwright Chromium
         run: |
           npm install --no-save --no-package-lock playwright@1.55.0
           npx playwright install --with-deps chromium
-
       - name: Run live Chromium flow
         env:
           XRAI_E2E_OUT: xrai-e2e-artifacts
         run: node .github/scripts/xrai-live-e2e.mjs
-
       - name: Upload E2E evidence
         if: always()
         uses: actions/upload-artifact@v4
