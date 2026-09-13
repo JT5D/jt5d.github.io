@@ -1,0 +1,1 @@
+await import('https://cdn.jsdelivr.net/gh/JT5D/xrai-agent@372c9d8e22442d121faa932c636e5c9925d762bf/web/browser-enhancements.js');
