@@ -1,109 +1,55 @@
-const MODEL_ID = 'onnx-community/LFM2.5-350M-ONNX';
-const CDN = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.1';
-const KNOWLEDGE_FILES = ['MISSION.md','KEY_LEARNINGS.md','SYSTEM_PATTERNS.md','AGENTIC_CODING_EVALS_2025_2026.md','UNVERIFIED.md'];
-const STOP = new Set('the a an and or to of in on for with is are be as at by from it this that use uses using'.split(' '));
-const tok = s => [...new Set((String(s).toLowerCase().match(/[a-z0-9_+-]{2,}/g)||[]).filter(x=>!STOP.has(x)))];
-let modelPromise;
-let knowledgePromise;
+const MODEL_ID='onnx-community/LFM2.5-350M-ONNX';
+const CDN='https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.1';
+const KNOWLEDGE_FILES=['MISSION.md','KEY_LEARNINGS.md','SYSTEM_PATTERNS.md','AGENTIC_CODING_EVALS_2025_2026.md','UNVERIFIED.md'];
+const SKILLS_KEY='xrai-skills-v2',META_KEY='xrai-meta-v2',RUNS_KEY='xrai-runs-v2';
+const STOP=new Set('the a an and or to of in on for with is are be as at by from it this that use uses using'.split(' '));
+const tok=s=>[...new Set((String(s).toLowerCase().match(/[a-z0-9_+-]{2,}/g)||[]).filter(x=>!STOP.has(x)))];
+const clamp=n=>Math.max(0,Math.min(1,Number(n)||0));
+const baseMeta=()=>({version:1,minScore:.82,directPromoteScore:.86,supportNeeded:2,maintenanceEvery:10,guidance:['Create narrow reusable skills, not task transcripts.','Prefer concrete evidence; browser-only skills require repeated successful support before promotion.','Treat retrieved skills as hypotheses; evidence outranks memory.']});
+let modelPromise,knowledgePromise;
 
-function normalizeGenerated(out){
-  const x = Array.isArray(out) ? out[0] : out;
-  const g = x?.generated_text ?? x?.text ?? x;
-  if (Array.isArray(g)) return g.filter(m=>m?.role==='assistant').at(-1)?.content || g.at(-1)?.content || JSON.stringify(g);
-  return String(g ?? '');
-}
+function normalizeGenerated(out){const x=Array.isArray(out)?out[0]:out,g=x?.generated_text??x?.text??x;if(Array.isArray(g))return g.filter(m=>m?.role==='assistant').at(-1)?.content||g.at(-1)?.content||JSON.stringify(g);return String(g??'')}
+async function chromeModel(onProgress){if(!globalThis.LanguageModel?.availability)return null;const options={expectedInputs:[{type:'text',languages:['en']}],expectedOutputs:[{type:'text',languages:['en']}]},availability=await globalThis.LanguageModel.availability(options);if(availability==='unavailable')return null;onProgress?.(`Chrome local model: ${availability}`);const session=await globalThis.LanguageModel.create({...options,monitor(m){m.addEventListener('downloadprogress',e=>onProgress?.(`Downloading local model ${Math.round(e.loaded*100)}%`))}});return{name:'Chrome built-in AI',prompt:messages=>session.prompt(messages.map(m=>`${m.role.toUpperCase()}: ${m.content}`).join('\n\n')+'\n\nASSISTANT:')}}
+async function transformersModel(onProgress){if(!navigator.gpu)throw new Error('No built-in browser AI and WebGPU is unavailable. Use recent Chrome/Edge/Safari, or run the CLI/MCP version.');onProgress?.('Loading no-key WebGPU fallback…');const{pipeline}=await import(CDN),generator=await pipeline('text-generation',MODEL_ID,{device:'webgpu',dtype:'q4',progress_callback:p=>{if(p?.progress!=null)onProgress?.(`Downloading local model ${Math.round(p.progress)}%`);else if(p?.status)onProgress?.(String(p.status))}});return{name:'LFM2.5 350M · WebGPU',prompt:async messages=>normalizeGenerated(await generator(messages,{max_new_tokens:420,do_sample:false,repetition_penalty:1.05}))}}
+export async function getLocalModel(onProgress=()=>{}){if(!modelPromise)modelPromise=(async()=>{try{const m=await chromeModel(onProgress);if(m)return m}catch(e){onProgress(`Built-in AI unavailable: ${e.message||e}`)}return transformersModel(onProgress)})();return modelPromise}
+async function loadKnowledge(){if(!knowledgePromise)knowledgePromise=Promise.all(KNOWLEDGE_FILES.map(async name=>{try{const r=await fetch(`./knowledge/${name}`);return r.ok?{name,text:await r.text()}:null}catch{return null}})).then(rows=>rows.filter(Boolean));return knowledgePromise}
 
-async function chromeModel(onProgress){
-  if (!globalThis.LanguageModel?.availability) return null;
-  const options={expectedInputs:[{type:'text',languages:['en']}],expectedOutputs:[{type:'text',languages:['en']}]};
-  const availability=await globalThis.LanguageModel.availability(options);
-  if(availability==='unavailable') return null;
-  onProgress?.(`Chrome local model: ${availability}`);
-  const session=await globalThis.LanguageModel.create({...options,monitor(m){m.addEventListener('downloadprogress',e=>onProgress?.(`Downloading local model ${Math.round(e.loaded*100)}%`))}});
-  return {name:'Chrome built-in AI',prompt:(messages)=>session.prompt(messages.map(m=>`${m.role.toUpperCase()}: ${m.content}`).join('\n\n')+'\n\nASSISTANT:')};
-}
+function getJson(key,fallback){try{return JSON.parse(localStorage.getItem(key)||'null')??fallback}catch{return fallback}}
+function setJson(key,value){localStorage.setItem(key,JSON.stringify(value))}
+function skills(){return getJson(SKILLS_KEY,[])}
+function meta(){return{...baseMeta(),...getJson(META_KEY,{})}}
+function hashText(s){let h=2166136261;for(const ch of String(s)){h^=ch.charCodeAt(0);h=Math.imul(h,16777619)}return(h>>>0).toString(16).padStart(8,'0')}
+function taskFingerprint(task){return hashText(tok(task).sort().join(' '))}
+function jaccard(a,b){const A=new Set(tok(a)),B=new Set(tok(b));if(!A.size||!B.size)return 0;let i=0;for(const x of A)if(B.has(x))i++;return i/(A.size+B.size-i)}
+function lexical(query,text){const q=tok(query),c=new Set(tok(text));return q.length?q.filter(t=>c.has(t)).length/q.length:0}
+function normalizeSkill(x={}){const title=String(x.title||'').trim().slice(0,120),trigger=String(x.trigger||'').trim().slice(0,500),procedure=String(x.procedure||'').trim().slice(0,1600),verifier=String(x.verifier||'').trim().slice(0,300),tags=[...new Set((Array.isArray(x.tags)?x.tags:[]).map(v=>String(v).trim().toLowerCase()).filter(Boolean))].slice(0,8),blob=`${title}\n${trigger}\n${procedure}\n${verifier}`,sensitive=/(-----BEGIN [A-Z ]*PRIVATE KEY-----|\b(?:api[_ -]?key|password|secret|token)\s*[:=]\s*[^\s,;]{6,}|\bsk-[a-z0-9_-]{12,}|\bgh[pousr]_[a-z0-9]{12,}|[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,})/i.test(blob);return title&&trigger&&procedure&&!sensitive?{title,trigger,procedure,verifier,tags}:null}
+function skillText(s){return`${s.title}\n${s.trigger}\n${s.procedure}\n${(s.tags||[]).join(' ')}`}
+function activeSkills(){return skills().filter(s=>s.status==='promoted')}
+function saveSkills(rows){setJson(SKILLS_KEY,rows.slice(-160))}
 
-async function transformersModel(onProgress){
-  if(!navigator.gpu) throw new Error('No built-in browser AI and WebGPU is unavailable. Use recent Chrome/Edge/Safari, or run the CLI/MCP version.');
-  onProgress?.('Loading no-key WebGPU fallback…');
-  const { pipeline } = await import(CDN);
-  const generator = await pipeline('text-generation',MODEL_ID,{device:'webgpu',dtype:'q4',progress_callback:p=>{
-    if(p?.progress!=null) onProgress?.(`Downloading local model ${Math.round(p.progress)}%`);
-    else if(p?.status) onProgress?.(String(p.status));
-  }});
-  return {name:'LFM2.5 350M · WebGPU',prompt:async(messages)=>normalizeGenerated(await generator(messages,{max_new_tokens:420,do_sample:false,repetition_penalty:1.05}))};
-}
+function retrievePromoted(query,limit=4){return activeSkills().map(s=>{const relevance=lexical(query,skillText(s));if(!relevance)return null;const utility=s.uses?((s.successes+1)/(s.uses+2)):.67,confidence=clamp((s.confidence||.72)*.65+utility*.35),score=relevance*.7+confidence*.15+utility*.15;return{...s,score,confidence,utility}}).filter(Boolean).sort((a,b)=>b.score-a.score).slice(0,limit)}
+async function retrieve(query,limit=6){const q=tok(query),rows=[];for(const f of await loadKnowledge())for(const chunk of f.text.split(/\n(?=#{1,4}\s)|\n{2,}/).filter(Boolean)){const c=tok(chunk),overlap=q.filter(t=>c.includes(t)).length;if(overlap)rows.push({source:f.name,text:chunk.slice(0,1400),score:overlap/Math.max(1,q.length),kind:'knowledge'})}for(const s of retrievePromoted(query,4))rows.push({source:`skill:${s.id}@v${s.version}`,text:`${s.title}\nWHEN: ${s.trigger}\nDO: ${s.procedure}${s.verifier?`\nVERIFY: ${s.verifier}`:''}`,score:s.score,kind:'skill',skill:s});return rows.sort((a,b)=>b.score-a.score).slice(0,limit)}
 
-export async function getLocalModel(onProgress=()=>{}){
-  if(!modelPromise) modelPromise=(async()=>{
-    try{const m=await chromeModel(onProgress);if(m)return m}catch(e){onProgress(`Built-in AI unavailable: ${e.message||e}`)}
-    return transformersModel(onProgress);
-  })();
-  return modelPromise;
-}
+export function extractEval(text){const match=String(text).match(/\{[\s\S]*\}/);if(match){try{const v=JSON.parse(match[0]);return{score:clamp(v.score),critique:String(v.critique||''),skill:normalizeSkill(v.skill||{})||{title:'',trigger:'',procedure:'',verifier:'',tags:[]}}}catch{}}return{score:0,critique:'Evaluator returned invalid JSON; this attempt cannot promote learning.',skill:{title:'',trigger:'',procedure:'',verifier:'',tags:[]}}}
 
-async function loadKnowledge(){
-  if(!knowledgePromise) knowledgePromise=Promise.all(KNOWLEDGE_FILES.map(async name=>{
-    try{const r=await fetch(`./knowledge/${name}`);return r.ok?{name,text:await r.text()}:null}catch{return null}
-  })).then(rows=>rows.filter(Boolean));
-  return knowledgePromise;
-}
-
-function lessons(){
-  try{return JSON.parse(localStorage.getItem('xrai-lessons')||'[]')}catch{return[]}
-}
-function addLesson(row){
-  const rows=lessons();rows.push(row);localStorage.setItem('xrai-lessons',JSON.stringify(rows.slice(-120)));
-}
-async function retrieve(query,limit=4){
-  const q=tok(query),rows=[];
-  for(const f of await loadKnowledge()) for(const chunk of f.text.split(/\n(?=#{1,4}\s)|\n{2,}/).filter(Boolean)){
-    const c=tok(chunk),overlap=q.filter(t=>c.includes(t)).length;if(overlap)rows.push({source:f.name,text:chunk.slice(0,1400),score:overlap/Math.max(1,q.length)});
-  }
-  for(const l of lessons()){
-    const chunk=`${l.task||''}\n${l.lesson||''}\n${(l.tags||[]).join(' ')}`,c=tok(chunk),overlap=q.filter(t=>c.includes(t)).length;if(overlap)rows.push({source:'verified local lesson',text:chunk.slice(0,1400),score:overlap/Math.max(1,q.length)});
-  }
-  return rows.sort((a,b)=>b.score-a.score).slice(0,limit);
-}
-
-function extractEval(text){
-  const match=String(text).match(/\{[\s\S]*\}/);
-  if(match){try{const v=JSON.parse(match[0]);return {score:Math.max(0,Math.min(1,Number(v.score)||0)),critique:String(v.critique||''),lesson:String(v.lesson||''),tags:Array.isArray(v.tags)?v.tags.slice(0,8):[]}}catch{}}
-  const n=String(text).match(/(?:score|rating)\s*[:=]\s*(0(?:\.\d+)?|1(?:\.0+)?|\d{1,3}%)/i)?.[1];
-  let score=n?.endsWith('%')?Number(n.slice(0,-1))/100:Number(n);if(!Number.isFinite(score))score=.84;
-  return {score,critique:String(text).slice(0,600),lesson:'Prefer bounded planning, visible execution events, and explicit verification.',tags:['local','verified']};
-}
+function observeSkillCandidate(candidateInput,task,score){const candidate=normalizeSkill(candidateInput),m=meta();if(!candidate||score<m.minScore)return{status:'ignored',reason:'No reusable candidate or score below learning threshold.'};let rows=skills();const sims=rows.map(s=>({s,sim:jaccard(`${s.title} ${s.trigger} ${(s.tags||[]).join(' ')}`,`${candidate.title} ${candidate.trigger} ${candidate.tags.join(' ')}`),proc:jaccard(s.procedure,candidate.procedure)})).sort((a,b)=>b.sim-a.sim),match=sims[0];let state;
+  if(match?.sim>=.58){const same=rows.filter(s=>s.id===match.s.id).sort((a,b)=>b.version-a.version)[0];if(same?.status==='promoted'&&match.proc>=.82)return{status:'existing',skill:same,id:same.id,version:same.version,reason:'Existing promoted skill already covers this candidate.'};if(same?.status==='candidate'&&match.proc>=.7){state=same;const fp=taskFingerprint(task);if(!state.supports.includes(fp))state.supports.push(fp);state.scores.push(score);state.updatedAt=new Date().toISOString()}else{state={...candidate,id:match.s.id,version:(same?.version||0)+1,status:'candidate',supports:[taskFingerprint(task)],scores:[score],uses:0,successes:0,failures:0,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};rows.push(state)}}else{state={...candidate,id:`skill-${hashText(`${candidate.title}|${candidate.trigger}|${candidate.tags.join(',')}`)}`,version:1,status:'candidate',supports:[taskFingerprint(task)],scores:[score],uses:0,successes:0,failures:0,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};rows.push(state)}
+  const avg=state.scores.reduce((a,b)=>a+b,0)/state.scores.length;if(state.supports.length>=m.supportNeeded&&avg>=m.directPromoteScore){for(const s of rows)if(s.id===state.id&&s.version<state.version&&s.status==='promoted')s.status='superseded';state.status='promoted';state.confidence=Math.min(.9,.62+avg*.22+Math.min(.08,state.supports.length*.02));state.promotedAt=new Date().toISOString();saveSkills(rows);return{status:'promoted',skill:state,id:state.id,version:state.version,supportCount:state.supports.length,reason:'Repeated independent successful observations passed the browser support gate.'}}
+  saveSkills(rows);return{status:'candidate',skill:state,id:state.id,version:state.version,supportCount:state.supports.length,reason:'Browser mode cannot execute a workspace verifier; one more distinct successful observation may promote this skill.'}}
+function recordSkillUsage(retrieved,score){const refs=new Set(retrieved.filter(x=>x.skill).map(x=>`${x.skill.id}@${x.skill.version}`)),rows=skills(),success=score>=meta().minScore;for(const s of rows)if(refs.has(`${s.id}@${s.version}`)){s.uses=(s.uses||0)+1;s.successes=(s.successes||0)+(success?1:0);s.failures=(s.failures||0)+(success?0:1);s.lastUsedAt=new Date().toISOString()}saveSkills(rows)}
+function maintainMeta(run){const runs=getJson(RUNS_KEY,[]);runs.push(run);setJson(RUNS_KEY,runs.slice(-60));const m=meta(),totalRuns=(m.totalRuns||0)+1;m.totalRuns=totalRuns;setJson(META_KEY,m);if(totalRuns-(m.lastMaintenanceRun||0)<m.maintenanceEvery)return null;const window=runs.slice(-m.maintenanceEvery),avgScore=window.reduce((a,b)=>a+b.score,0)/window.length,skillRuns=window.filter(x=>x.skillRefs?.length),skillFailureRate=skillRuns.length?skillRuns.filter(x=>x.score<m.minScore).length/skillRuns.length:0,candidateRuns=window.filter(x=>x.decision&&x.decision!=='none'),candidateRate=candidateRuns.length?candidateRuns.filter(x=>x.decision==='candidate').length/candidateRuns.length:0,promotionRate=candidateRuns.length?candidateRuns.filter(x=>['promoted','existing'].includes(x.decision)).length/candidateRuns.length:0,guidance=[...baseMeta().guidance];if(candidateRate>.5)guidance.push('Too many browser candidates remain unverified: make skills narrower and repeat them only across distinct successful tasks.');if(skillFailureRate>.25)guidance.push('Recent retrieved skills correlated with failures: use fewer, higher-confidence skills and re-check assumptions.');if(promotionRate>.6&&avgScore>.9)guidance.push('Recent promoted skills transfer well: reuse proven procedures before inventing new ones.');const next={...m,version:(m.version||1)+1,lastMaintenanceRun:totalRuns,guidance,metrics:{avgScore,skillFailureRate,candidateRate,promotionRate}};setJson(META_KEY,next);
+  const rows=skills();for(const s of rows.filter(x=>x.status==='promoted'&&(x.uses||0)>=5)){const rate=(s.successes||0)/Math.max(1,s.uses||0);if(rate>=.4)continue;s.status='rolled_back';const prior=rows.filter(x=>x.id===s.id&&x.version<s.version&&x.status==='superseded').sort((a,b)=>b.version-a.version)[0];if(prior)prior.status='promoted'}saveSkills(rows);return next}
 
 export async function runLocalTask(task,opts={},emit=()=>{},progress=()=>{}){
-  const runId=crypto.randomUUID(),maxChildren=Math.max(0,Math.min(3,Number(opts.maxChildren??2))),retries=Math.max(0,Math.min(2,Number(opts.retries??1)));
-  const event=(type,summary,meta={})=>emit({id:crypto.randomUUID(),runId,ts:new Date().toISOString(),type,summary,...meta});
-  event('run:start',task,{data:{provider:'local-browser'}});
-  const model=await getLocalModel(progress);event('model:ready',model.name,{name:'Local model'});
-  const hits=await retrieve(task,4);for(const h of hits)event('knowledge:hit',`${h.source} · ${Math.round(h.score*100)}%`,{agentId:'planner',data:h});
-  const context=hits.map((h,i)=>`[${i+1}] ${h.source}\n${h.text}`).join('\n\n');
-  let attempt=0,finalOutput='',score=0,feedback='';
-  while(attempt<=retries){
-    attempt++;
-    event('agent:start',`Plan attempt ${attempt}`,{agentId:'planner',name:'Planner'});
-    const plan=await model.prompt([{role:'system',content:'You are XRAI Planner. Produce a short public execution plan, not private reasoning. Be concrete and concise.'},{role:'user',content:`TASK:\n${task}\n\nRELEVANT XRAI KNOWLEDGE:\n${context||'None'}${feedback?`\n\nPRIOR EVALUATOR FEEDBACK:\n${feedback}`:''}`}]);
-    event('agent:done',plan.slice(0,900),{agentId:'planner',name:'Planner'});
-    const workers=[];
-    const workerCount=Math.max(1,maxChildren);
-    for(let i=0;i<workerCount;i++){
-      const agentId=`worker-${attempt}-${i+1}`;event('agent:delegate',`Worker ${i+1}: independent solution/check`,{agentId:'planner',parentAgentId:'planner'});event('agent:start',`Worker ${i+1} executing`,{agentId,parentAgentId:'planner',name:`Worker ${i+1}`});
-      const role=i===0?'primary solver':'critical verifier looking for gaps, errors, and better alternatives';
-      const out=await model.prompt([{role:'system',content:`You are an XRAI ${role}. Give useful work product and verifiable conclusions. Do not reveal private chain-of-thought.`},{role:'user',content:`TASK:\n${task}\n\nPUBLIC PLAN:\n${plan}\n\nKNOWLEDGE:\n${context||'None'}${feedback?`\n\nFIX THESE GAPS:\n${feedback}`:''}`}]);
-      workers.push(out);event('agent:done',out.slice(0,900),{agentId,parentAgentId:'planner',name:`Worker ${i+1}`});
-    }
-    event('agent:start','Synthesizing worker results',{agentId:'synth',parentAgentId:'planner',name:'Synthesizer'});
-    finalOutput=await model.prompt([{role:'system',content:'You are XRAI Synthesizer. Return the best concise final answer to the user. Merge useful worker evidence, remove duplication, clearly state limitations. Do not discuss hidden reasoning.'},{role:'user',content:`TASK:\n${task}\n\nPLAN:\n${plan}\n\nWORKERS:\n${workers.map((w,i)=>`WORKER ${i+1}:\n${w}`).join('\n\n')}`}]);
-    event('agent:done',finalOutput.slice(0,1000),{agentId:'synth',parentAgentId:'planner',name:'Synthesizer'});
-    event('agent:start','Checking completeness and evidence',{agentId:'eval',name:'Evaluator'});
-    const rawEval=await model.prompt([{role:'system',content:'You are a strict evaluator. Output JSON only: {"score":0.0,"critique":"...","lesson":"...","tags":["..."]}. Score >=0.82 only when the response directly satisfies the task and is internally consistent. Lesson must be reusable and contain no personal data.'},{role:'user',content:`TASK:\n${task}\n\nCANDIDATE:\n${finalOutput}`}]);
-    const ev=extractEval(rawEval);score=ev.score;event('eval',`Score ${Math.round(score*100)}% — ${ev.critique||'Evaluation complete.'}`,{agentId:'eval',name:'Evaluator',data:ev});
-    if(score>=.82||attempt>retries){if(score>=.82&&ev.lesson.trim()){addLesson({ts:new Date().toISOString(),task:task.slice(0,500),lesson:ev.lesson,score,tags:ev.tags});event('learn',ev.lesson,{agentId:'eval',data:{tags:ev.tags}})}break}
-    feedback=ev.critique;event('retry',feedback,{agentId:'eval',data:{attempt:attempt+1}});
+  const runId=crypto.randomUUID(),maxChildren=Math.max(0,Math.min(3,Number(opts.maxChildren??2))),retries=Math.max(0,Math.min(2,Number(opts.retries??1))),m=meta();
+  const event=(type,summary,meta={})=>emit({id:crypto.randomUUID(),runId,ts:new Date().toISOString(),type,summary,...meta});event('run:start',task,{data:{provider:'local-browser'}});
+  const model=await getLocalModel(progress);event('model:ready',model.name,{name:'Local model'});const hits=await retrieve(task,6),promoted=hits.filter(h=>h.kind==='skill');for(const h of hits)event(h.kind==='skill'?'skill:hit':'knowledge:hit',`${h.source} · ${Math.round(h.score*100)}%`,{agentId:'planner',data:h});const context=hits.map((h,i)=>`[${i+1}] ${h.source}\n${h.text}`).join('\n\n'),metaGuidance=(m.guidance||[]).join(' ');
+  let attempt=0,finalOutput='',score=0,feedback='',finalEval=null;
+  while(attempt<=retries){attempt++;event('agent:start',`Plan attempt ${attempt}`,{agentId:'planner',name:'Planner'});const plan=await model.prompt([{role:'system',content:`You are XRAI Planner. Produce a short public execution plan, not private reasoning. Be concrete and concise. Promoted skills are hypotheses, not authority. ${metaGuidance}`},{role:'user',content:`TASK:\n${task}\n\nRELEVANT XRAI KNOWLEDGE + PROMOTED SKILLS:\n${context||'None'}${feedback?`\n\nPRIOR EVALUATOR FEEDBACK:\n${feedback}`:''}`}]);event('agent:done',plan.slice(0,900),{agentId:'planner',name:'Planner'});
+    const workers=[],workerCount=Math.max(1,maxChildren);for(let i=0;i<workerCount;i++){const agentId=`worker-${attempt}-${i+1}`;event('agent:delegate',`Worker ${i+1}: independent solution/check`,{agentId:'planner',parentAgentId:'planner'});event('agent:start',`Worker ${i+1} executing`,{agentId,parentAgentId:'planner',name:`Worker ${i+1}`});const role=i===0?'primary solver':'critical verifier looking for gaps, errors, and better alternatives',out=await model.prompt([{role:'system',content:`You are an XRAI ${role}. Give useful work product and verifiable conclusions. Do not reveal private chain-of-thought.`},{role:'user',content:`TASK:\n${task}\n\nPUBLIC PLAN:\n${plan}\n\nKNOWLEDGE + SKILLS:\n${context||'None'}${feedback?`\n\nFIX THESE GAPS:\n${feedback}`:''}`}]);workers.push(out);event('agent:done',out.slice(0,900),{agentId,parentAgentId:'planner',name:`Worker ${i+1}`})}
+    event('agent:start','Synthesizing worker results',{agentId:'synth',parentAgentId:'planner',name:'Synthesizer'});finalOutput=await model.prompt([{role:'system',content:'You are XRAI Synthesizer. Return the best concise final answer. Merge useful worker evidence, remove duplication, clearly state limitations. Do not discuss hidden reasoning.'},{role:'user',content:`TASK:\n${task}\n\nPLAN:\n${plan}\n\nWORKERS:\n${workers.map((w,i)=>`WORKER ${i+1}:\n${w}`).join('\n\n')}`}]);event('agent:done',finalOutput.slice(0,1000),{agentId:'synth',parentAgentId:'planner',name:'Synthesizer'});
+    event('agent:start','Checking completeness and evidence',{agentId:'eval',name:'Evaluator'});const rawEval=await model.prompt([{role:'system',content:`You are a strict evaluator. Output JSON only: {"score":0.0,"critique":"...","skill":{"title":"","trigger":"","procedure":"","verifier":"","tags":[]}}. Score >=0.82 only when the response satisfies the task and is internally consistent. Propose a narrow reusable skill only when supported. Never include personal data or secrets. Browser mode cannot execute verifier commands, so do not assume a verifier passed. ${metaGuidance}`},{role:'user',content:`TASK:\n${task}\n\nCANDIDATE:\n${finalOutput}`}]);finalEval=extractEval(rawEval);score=finalEval.score;event('eval',`Score ${Math.round(score*100)}% — ${finalEval.critique||'Evaluation complete.'}`,{agentId:'eval',name:'Evaluator',data:finalEval});if(score>=m.minScore||attempt>retries)break;feedback=finalEval.critique;event('retry',feedback,{agentId:'eval',data:{attempt:attempt+1}})
   }
-  event('run:done',finalOutput.slice(0,1200),{data:{score,attempts:attempt,provider:model.name}});
-  return {runId,output:finalOutput,score,attempts:attempt,provider:model.name};
+  recordSkillUsage(promoted,score);let learning={status:'none'};if(score>=m.minScore&&finalEval?.skill){learning=observeSkillCandidate(finalEval.skill,task,score);if(learning.status!=='ignored')event(`skill:${learning.status}`,`${learning.skill?.title||'Skill'} — ${learning.reason}`,{agentId:'eval',name:'Skill gate',data:learning})}
+  const nextMeta=maintainMeta({score,decision:learning.status||'none',skillRefs:promoted.map(h=>`${h.skill.id}@${h.skill.version}`)});if(nextMeta)event('meta:update',`Meta-skill v${nextMeta.version} · avg score ${Math.round(nextMeta.metrics.avgScore*100)}%`,{name:'Slow learning loop',data:nextMeta});event('run:done',finalOutput.slice(0,1200),{data:{score,attempts:attempt,provider:model.name,learning:learning.status}});return{runId,output:finalOutput,score,attempts:attempt,provider:model.name,learning}
 }
