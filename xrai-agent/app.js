@@ -1,1 +1,1 @@
-await import('https://cdn.jsdelivr.net/gh/JT5D/xrai-agent@25ec512627feccaa341ac384af38f338bf5fbc48/web/app.js');
+await import('https://cdn.jsdelivr.net/gh/JT5D/xrai-agent@aa62c6a1d724169fe88c466dc14779d6814c995b/web/app.js');
