@@ -14,7 +14,7 @@ permissions:
 
 env:
   XRAI_URL: https://jt5d.github.io/xrai-agent/
-  XRAI_VERSION: 0.3.3
+  XRAI_VERSION: 0.3.4
 
 jobs:
   chromium-e2e:
@@ -33,8 +33,8 @@ jobs:
           set -euo pipefail
           for i in {1..40}; do
             body="$(curl -fsSL --max-time 20 "${XRAI_URL}?ci=${GITHUB_SHA}" || true)"
-            if printf '%s' "$body" | grep -q '0.3.3'; then
-              echo 'Deployed XRAI v0.3.3 detected.'
+            if printf '%s' "$body" | grep -q '0.3.4'; then
+              echo 'Deployed XRAI v0.3.4 detected.'
               exit 0
             fi
             echo "Waiting for Pages deployment ($i/40)..."
